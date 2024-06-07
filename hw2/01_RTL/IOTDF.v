@@ -9,110 +9,83 @@ output         busy;
 output         valid;
 output [127:0] iot_out;
 
-reg busy_reg;
-reg valid_reg;
-reg [127:0] output_reg;
-reg last=0;
+reg busy_reg, busy_wire;
+reg valid_reg, valid_wire;
+reg [127:0] output_reg, output_wire;
+reg [7:0] input_buff_reg, input_buff_wire;
+reg [3:0] count_wire, count_reg;
+reg [7:0] x_reg, x_wire;
 
-reg [4:0] cycle_count = 0; 
-reg [6:0] data_count = 0;
-reg [127:0] data_buffer = 0;
-reg [127:0] whole_output_reg [0:59];
 assign busy = busy_reg;
 assign valid = valid_reg;
 assign iot_out = output_reg;
 
+integer i;
+integer j;
+reg [15:0] y_temp;
+always @(*) begin
+    output_wire = output_reg;
+    count_wire = count_reg;
+    busy_wire = busy_reg;
+    valid_wire = valid_reg;
+    input_buff_wire = iot_in;
+    x_wire = input_buff_reg;
+
+    if (fn_sel == 3'b001) begin
+        if(count_reg == 0) begin
+            output_wire[127] = input_buff_wire[7];
+            for (i=6; i>=0; i=i-1) begin
+                output_wire[i+120] = output_wire[i+121] ^ input_buff_wire[i];
+            end
+        end 
+        else begin
+            j = 120-(count_reg<<3);
+            for(i = 7; i >= 0; i = i-1) begin
+                output_wire[j+i] = output_wire[j+i+1] ^ input_buff_wire[i];
+            end
+        end
+    end
+    else begin
+        y_temp = (input_buff_wire << 6) + (input_buff_wire << 4);
+        if (count_reg > 0) begin
+            y_temp = y_temp + (x_wire << 7) + (x_wire << 4);
+        end
+        if (count_reg > 1) begin
+            y_temp = y_temp + (x_reg << 5);
+        end
+        output_wire[127-8*count_reg -: 8] = (y_temp >> 8) + y_temp[7];
+    end
+    
+    if(in_en) begin
+        count_wire = count_reg + 1;
+        valid_wire = 0;
+        if(count_reg == 14) begin
+            busy_wire = 1;
+        end
+        else if (count_reg == 15) begin
+            busy_wire = 0;
+            valid_wire = 1;
+        end
+    end
+    else valid_wire = 0;
+end
 
 always @(posedge clk or posedge rst) begin
-
     if (rst) begin
-        cycle_count <= 0;
-        data_count <= 0;
-        data_buffer <= 0;
+        count_reg <= 0;
         busy_reg <= 0;
         valid_reg <= 0;
         output_reg <= 0;
+        x_reg <= 0;
     end
     else begin
-        if(last) begin
-            data_count <= data_count + 1;
-            busy_reg <= 1;
-            cycle_count <= 0;
-            data_buffer <= (data_buffer << 8) | iot_in;
-            if (fn_sel == 3'b001) begin
-                whole_output_reg[data_count] <= gray_to_bin((data_buffer << 8) | iot_in);
-            end 
-            else begin
-                whole_output_reg[data_count] <= filt((data_buffer << 8) | iot_in);
-            end
-            last <= 0;
-        end
-        else if (!busy && in_en) begin
-                cycle_count <= cycle_count + 1;
-                data_buffer <= (data_buffer << 8) | iot_in;
-                if (cycle_count == 0) begin
-                end
-                if (cycle_count == 14) begin
-                    last <= 1;
-                    busy_reg <= 1;
-                end
-        end
-
-        else if (data_count >= 60 && data_count < 120) begin
-            valid_reg <= 1;
-            data_count <= data_count + 1;
-            output_reg <= whole_output_reg[data_count-60];
-        end
-        else begin
-            busy_reg <= 0;
-        end
-    end
+        count_reg <= count_wire;
+        busy_reg <= busy_wire;
+        valid_reg <= valid_wire;
+        output_reg <= output_wire;
+        input_buff_reg <= input_buff_wire;
+        x_reg <= x_wire;
+    end 
 end 
 
-    function [127:0] gray_to_bin(input [127:0] gray);
-        integer i;
-        begin
-            gray_to_bin[127] = gray[127];
-            for (i = 126; i >= 0; i = i - 1) begin
-                gray_to_bin[i] = gray_to_bin[i + 1] ^ gray[i];
-            end
-        end
-    endfunction
-
-    function [127:0] filt(input [127:0] sig);
-        integer n;
-        reg [15:0] x[0:15];
-        reg [15:0] y_temp;
-        reg [7:0] y[0:15];
-        begin
-            for (n = 0; n < 16; n = n + 1) begin
-                x[n] = sig[127-8*n -: 8] << 8;
-            end
-            for (n = 0; n < 16; n = n + 1) begin
-                y_temp = 0;  
-                y_temp = y_temp + (x[n] >> 2) + (x[n] >> 4);
-
-                if (n > 0) begin
-                    y_temp = y_temp + (x[n-1] >> 1) + (x[n-1] >> 4);
-                end
-
-                if (n > 1) begin
-                    y_temp = y_temp + (x[n-2] >> 3);
-                end
-
-                if (y_temp[7] == 1) begin
-                    y[n] = (y_temp >> 8) + 1;
-                end else begin
-                    y[n] = y_temp >> 8;
-                end
-            end
-
-            filt = 0;
-            for (n = 0; n < 16; n = n + 1) begin
-                filt = filt | (y[15-n] << (8 * n));
-            end
-        end
-    endfunction
-
 endmodule 
-
