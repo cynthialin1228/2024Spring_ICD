@@ -29,9 +29,11 @@ assign O_VALID = O_VALID_reg;
 
 integer i;
 integer j;
+integer k, k1, ko;
+integer s1, s2, s3, s4;
+reg [3:0] a, b, x, y, a1, b1, r1, r2;
 reg [7:0] p_x, p_y;
-reg [3:0] x, y, a, b, a1, b1, r1, r2;
-reg [7:0] k_a, k_a1;
+reg signed [8:0] k_a, k1_a, ko_a;
 
 always @(*) begin
     O_DATA_wire = O_DATA_reg;
@@ -52,11 +54,19 @@ always @(*) begin
     else if(count_reg == 0) begin
         count_wire = 1;
         REN_wire = 0;
-        ADDR_wire[5:0] = H0_reg + 1;
-        ADDR_wire[11:6] = V0_reg;
+        if (SW_reg == 1) begin 
+            if (SH_reg != 1) begin
+                ADDR_wire[5:0] = H0_reg;
+                ADDR_wire[11:6] = V0_reg + 1;
+            end
+        end
+        else begin
+            ADDR_wire[5:0] = H0_reg + 1;
+            ADDR_wire[11:6] = V0_reg;
+        end
         O_VALID_wire = 0;
     end
-    else if (count_reg < 289) begin
+    else if (count_reg < 290) begin
         count_wire = count_reg + 1;
 
         if (!REN_reg_delay1) begin
@@ -67,52 +77,98 @@ always @(*) begin
 
         i = (count_reg-1) % 17;
         j = (count_reg-1) / 17;
-        p_x = SW_reg * i;
-        p_y = SH_reg * j;
+        p_x = (SW_reg-1) * i;
+        p_y = (SH_reg-1) * j;
         x = p_x[3:0];
         y = p_y[3:0];
         a = p_x[7:4];
         b = p_y[7:4];
+        r1 = (x == 0) ? a : a + 1;
+        r2 = (y == 0) ? b : b + 1;
 
-        if(i < SW_reg - 1) begin
-            if(j<=SH_reg) begin
-                ADDR_wire[5:0] = H0_reg + i + 2;
-                ADDR_wire[11:6] = V0_reg + j;
-                REN_wire = 0;
+        if(SW_reg != 1) begin
+            if(i < SW_reg - 2) begin
+                if(j<SH_reg) begin
+                    ADDR_wire[5:0] = H0_reg + i + 2;
+                    ADDR_wire[11:6] = V0_reg + j;
+                    REN_wire = 0;
+                end
             end
-        end
-        else if (i == SW_reg-1) begin
-            if(j < SH_reg) begin
-                ADDR_wire[5:0] = H0_reg;
-                ADDR_wire[11:6] = V0_reg + j + 1;
-                REN_wire = 0;
+            else if (i == SW_reg-2) begin
+                if(j < SH_reg-1) begin
+                    ADDR_wire[5:0] = H0_reg;
+                    ADDR_wire[11:6] = V0_reg + j + 1;
+                    REN_wire = 0;
+                end
             end
-        end
-        else if (i == SW_reg) begin
-            if(j < SH_reg) begin
-                ADDR_wire[5:0] = H0_reg + 1;
-                ADDR_wire[11:6] = V0_reg + j + 1;
-                REN_wire = 0;
+            else if (i == SW_reg-1) begin
+                if(j < SH_reg-1) begin
+                    ADDR_wire[5:0] = H0_reg + 1;
+                    ADDR_wire[11:6] = V0_reg + j + 1;
+                    REN_wire = 0;
+                end
+            end
+            else begin
+                REN_wire = 1;
             end
         end
         else begin
-            REN_wire = 1;
-        end
-
-        if (y != 0) begin
-            k_a = (img_original[b][a] * (16 - y) + img_original[b + 1][a] * y) >> 4;
-            if (x != 0) begin
-                k_a1 = (img_original[b][a + 1] * (16 - y) + img_original[b + 1][a + 1] * y) >> 4;
-                k_a = (k_a * (16 - x) + k_a1 * x) >> 4;
+            if (SH_reg != 1) begin
+                if(j < SH_reg-2) begin
+                    ADDR_wire[5:0] = H0_reg;
+                    ADDR_wire[11:6] = V0_reg + j + 2;
+                    REN_wire = 0;
+                end
+            end
+            else begin
+                REN_wire = 1;
             end
         end
-        else if (x != 0) begin
-            k_a = (img_original[b][a] * (16 - x) + img_original[b][a + 1] * x) >> 4;
+        
+        s1 = img_original[b][a];
+        s2 = img_original[b][r1];
+        s3 = img_original[r2][a];
+        s4 = img_original[r2][r1];
+
+        if (s1 > s3) begin
+            if ((s1 - s3) * y % 16 != 0) begin
+                k = s1 - ((s1 - s3) * y / 16) - 1;
+            end
+            else begin
+                k = s1 - ((s1 - s3) * y / 16);
+            end
         end
         else begin
-            k_a = img_original[b][a];
+            k = s1 + ((s3 - s1) * y / 16);
         end
-        O_DATA_wire = k_a;
+        if (s2 > s4) begin
+            if ((s2 - s4) * y % 16 != 0) begin
+                k1 = s2 - ((s2 - s4) * y / 16) - 1;
+            end
+            else begin
+                k1 = s2 - ((s2 - s4) * y / 16);
+            end
+        end
+        else begin
+            k1 = s2 + ((s4 - s2) * y / 16);
+        end
+        k = (k < 0) ? 0 : ((k > 255) ? 255 : k);
+        k1 = (k1 < 0) ? 0 : ((k1 > 255) ? 255 : k1);
+
+        if (k > k1) begin
+            if ((k - k1) * x % 16 != 0) begin
+                ko = k - ((k - k1) * x / 16) - 1;
+            end
+            else begin
+                ko = k - ((k - k1) * x / 16);
+            end
+        end
+        else begin
+            ko = k + ((k1 - k) * x / 16);
+        end
+        ko = (ko < 0) ? 0 : ((ko > 255) ? 255 : ko);
+
+        O_DATA_wire = ko[7:0];
         O_VALID_wire = 1;
     end
     else begin
