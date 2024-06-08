@@ -45,8 +45,6 @@ always @(*) begin
         SW_reg = SW;
         SH_reg = SH;
         ADDR_wire = {V0, H0};
-        // ADDR_wire[5:0] = H0;
-        // ADDR_wire[11:6] = V0;
         REN_wire = 0;
         count_wire = 0;
         O_DATA_wire = 0;
@@ -56,10 +54,11 @@ always @(*) begin
         REN_wire = 0;
         ADDR_wire[5:0] = H0_reg + 1;
         ADDR_wire[11:6] = V0_reg;
+        O_VALID_wire = 0;
     end
-    else if (count_reg < 291) begin
+    else if (count_reg < 289) begin
         count_wire = count_reg + 1;
-        
+
         if (!REN_reg_delay1) begin
             a1 = (ADDR_reg_delay1[5:0] - H0_reg);
             b1 = (ADDR_reg_delay1[11:6] - V0_reg);
@@ -114,12 +113,7 @@ always @(*) begin
             k_a = img_original[b][a];
         end
         O_DATA_wire = k_a;
-        if(count_reg == 0) begin
-            O_VALID_wire = 0;
-        end
-        else begin
-            O_VALID_wire = 1;
-        end
+        O_VALID_wire = 1;
     end
     else begin
         O_VALID_wire = 0;
